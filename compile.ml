@@ -189,12 +189,12 @@ let rec add_print_function typ =
         movq !%rsi !%r12 ++
         movq (ilab ocb_s) !%rsi ++
         call "print_string" ++
-        Hashtbl.fold (fun f_name f d ->
-          d ++
-          (if d = nop
-           then nop
+	(* merci seigneur à celui qui a pensé à rajouter le champs des fields sous forme de liste dans les structures <3_<3 *)
+        List.fold_left (fun d f ->
+	  d ++
+	  (if d = nop then nop
            else movq (ilab space_s) !%rsi ++
-                call "print_string") ++
+		call "print_string") ++
           (match f.f_typ with
             | Tstruct s ->
                 add_print_function f.f_typ;
@@ -208,7 +208,7 @@ let rec add_print_function typ =
                 add_print_function f.f_typ;
                 movq (ind ~ofs:f.f_ofs r12) !%rsi ++
                 call (t_expr_to_print f.f_typ)
-          )) s.s_fields nop ++
+          )) nop s.s_ordered_fields ++
         movq (ilab ccb_s) !%rsi ++
         call "print_string" ++
         popq r12 ++
@@ -575,9 +575,13 @@ and expr env e = match e.expr_desc with
   | TEnew ty ->
       allocz (sizeof ty)
 
-  | TEdot ({expr_desc = (TEident _ | TEdot _ | TEcall _) } as e1, {f_name; f_ofs}) ->
+  | TEdot ({expr_desc = (TEident _ | TEcall _) } as e1, {f_name; f_ofs}) ->
       expr env e1 ++
       movq (ind ~ofs:f_ofs rax) !%rax
+
+  | TEdot ({expr_desc = (TEdot _) }, f) ->
+      expr_address env e ++
+      movq (ind rax) !%rax
 
   | TEdot ({expr_desc = TEunop(Ustar,e1) },f) -> 
       expr env {e with expr_desc =(TEdot(e1,f))}
