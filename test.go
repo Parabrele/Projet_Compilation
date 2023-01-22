@@ -1,9 +1,17 @@
 
 package main
+import "fmt"
 
-type T struct { a int; b bool; p *int }
+func fact(n int) int {
+	if n <= 1 {
+		return 1;
+	}
+	return fact(n-1);
+}
 
 func main() {
-	var t T
-    t.a = 5
+  for n := 0; n <= 10; n++ {
+	  fmt.Print(fact(n));
+	  fmt.Print("\n")
+  }
 }

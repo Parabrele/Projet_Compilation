@@ -61,6 +61,7 @@ let alloc_string =
 
 let malloc n =
   movq (imm n) !%rdi ++
+  (* Ce motif dégueulasse reviendra plusieurs fois. Il sert à réaligner la pile pour que papy Windows arrête de faire son aigris. Ca n'a aucune importance sur les linux *)
   pushq !%rbp ++
   movq !%rsp !%rbp ++
   movq (ilab "0xfffffffffffffff0") !%rax ++
@@ -95,13 +96,16 @@ let sizeof = Typing.sizeof
 let new_label =
   let r = ref 0 in fun () -> incr r; "L_" ^ string_of_int !r
 
+(* c'est pas forcément utile de tout mettre en mtuable, mais on sait jamais *)
+(* de plus, il y avait un champ qui servait à rien donc je l'ai viré. *)
 type env = {
   mutable exit_label: string;
   mutable ofs_this: int;
-  mutable nb_locals: int; (* maximum *)
-
+  mutable nb_locals: int;
 }
 
+(* fonctions utiles pour gérer les environnements *)
+(* nb_local sera utile pour calculer le décalage dans la pile, multiplié par 8, puisque chaque objet est soit de taille 8 soit stoqué comme un pointeur de taille 8 vers un truc plus gros *)
 let env_add_variable env =
   env.nb_locals <- env.nb_locals + 1
 let env_copy { exit_label; ofs_this; nb_locals } =
@@ -109,17 +113,21 @@ let env_copy { exit_label; ofs_this; nb_locals } =
 let env_empty nb_args =
   { exit_label = ""; ofs_this = nb_args; nb_locals = 0 }
 
+(* fonction utile pour bidouiller les expressions des or et tout, et les passer à un if pour que ce soit paresseux. *)
 let mk_bool d = { expr_desc = d; expr_typ = Tbool }
 
 (* f reçoit le label correspondant à ``renvoyer vrai'' *)
-(* c'est bien gentil de balancer une fonction déjà faite mais je comprend pas à quoi elle sert, donc bon... *)
+(* cette fonction est bien gentille mais je comprend pas à quoi elle sert, donc bon... *)
 let compile_bool f =
   let l_true = new_label () and l_end = new_label () in
   f l_true ++
   movq (imm 0) !%rdi ++ jmp l_end ++
   label l_true ++ movq (imm 1) !%rdi ++ label l_end
 
-(*gestion des prints*)
+(* ###### GESTION DES PRINTS ###### *)
+(* On pourrait aussi pré générer les prints classiques, mais c'est moins joli que de les générer uniquement s'ils sont utiles *)
+
+(* création des noms des labels *)
 let t_expr_to_print = function
   | Tstring -> "print_string"
   | Tbool -> "print_bool"
@@ -127,23 +135,19 @@ let t_expr_to_print = function
   | Tptr (Tstruct s) -> "print_ptr_" ^ s.s_name
   | Tptr _ | Tptrnil -> "print_ptr"
   | Tstruct s -> "print_" ^ s.s_name
-  | _ -> failwith "problème dans t_expr_to_print :o"
+  | _ -> failwith "problème rencontré dans t_expr_to_print"
+
+  let space_s = alloc_string " "
 
 (* TODO dans le rapport, parler de comment c'était trop big brain de faire une hastbl pour faire que les print qu'on veut et s'en souvenir*)
 (* mais que avec un string du code qu'on génère nous même sans x8664, ça aurait été plus simple ! *)
 (* Générations des fonctions print utiles *)
-(* On pourrait aussi pré générer les prints classiques, mais c'est moins joli que de les générer uniquement s'ils sont utiles *)
-(* les prints prennent leur argument dans %rsi *)
-
-let space_s = alloc_string " "
-
 let print_env = Hashtbl.create 5
 let rec add_print_function typ =
   if not (Hashtbl.mem print_env (t_expr_to_print typ)) then
   Hashtbl.add print_env (t_expr_to_print typ) (match typ with
     | Tstring ->
         let s_string = alloc_string "%s" in
-        (* c'est maxi sombre :o tout ça pour régler des problèmes de segfault qui arrivent sur mon pc mais pas sur celui sur lequel vous aller tester, parce que windows est ultra strict sur l'alignement de la pile :o *)
         pushq !%rbp ++
         movq !%rsp !%rbp ++
         movq (ilab "0xfffffffffffffff0") !%rax ++
@@ -192,10 +196,10 @@ let rec add_print_function typ =
         call "print_string" ++
 	(* merci seigneur à celui qui a pensé à rajouter le champs des fields sous forme de liste dans les structures <3_<3 *)
         List.fold_left (fun d f ->
-	  d ++
-	  (if d = nop then nop
+	        d ++
+	        (if d = nop then nop
            else movq (ilab space_s) !%rsi ++
-		call "print_string") ++
+		            call "print_string") ++
           (match f.f_typ with
             | Tstruct s ->
                 add_print_function f.f_typ;
@@ -237,7 +241,8 @@ let rec add_print_function typ =
     | Tptr _ | Tptrnil ->
         add_print_function Tstring;
         let string_nil = alloc_string "<nil>"
-        and wtf = alloc_string "0x%010x" (* merci stack overflow, j'ai toujours pas compris à quoi tu sers mon bon ami *)
+        (* on veut afficher les poiteurs en exa *)
+        and wtf = alloc_string "0x%010x"
         and l = new_label () in
         cmpq (imm 0) !%rsi ++
         jne l ++
@@ -260,9 +265,9 @@ let rec add_print_function typ =
   
 (* Gère les appels de print *)
 let rec expr_print add_space env = function
-  | [] -> nop
   (* pour ça on regarde si l'expression est un call, et si oui on print ses retours au lieu de rax. *)
   (* note : les fonctions retournent des Tmany, donc pas des Tstring, donc pas besoin dans le 1er cas. *)
+  | [] -> nop
   | ({ expr_typ = Tstring } as e) :: el ->
       expr env e ++
       movq !%rax !%rsi ++
@@ -287,7 +292,9 @@ let rec expr_print add_space env = function
           call (t_expr_to_print e.expr_typ)) ++
       expr_print true env el
 
-(* Associe une *l-value* à son adresse courante *)
+(* ###### FIN DES PRINTS ! ENFIN ! ###### *)
+
+(* Associe une l-value à son adresse courante *)
 and expr_address env { expr_desc=desc; expr_typ=typ } = match desc, typ with
   | TEident v, Tstruct _ ->
       (* on fait confiance au typing :o *)
@@ -298,7 +305,7 @@ and expr_address env { expr_desc=desc; expr_typ=typ } = match desc, typ with
       movq (ind ~ofs:v.v_addr rbp) !%rax
       (* les structures sont des pointeurs de toute façon, donc leur adresse c'est elle même en gros *)
       (* alors que les autres, leur adresse c'est vraiment leur adresse *)
-      (* d'où la disjonction de cas*)
+      (* d'où la disjonction de cas *)
   | TEident v, _ ->
       leaq (ind ~ofs:v.v_addr rbp) rax
   | TEdot (e, f), _ ->
@@ -335,7 +342,7 @@ and expr env e = match e.expr_desc with
       movq (ilab label) !%rax
 
   | TEbinop (Band, e1, e2) ->
-      (* on code la paresse par un if*)
+      (* on code la paresse par un if *)
       expr env 
         (mk_bool
           (TEif(
@@ -354,6 +361,7 @@ and expr env e = match e.expr_desc with
 
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
       expr env e1 ++
+      (* les fonctions ont déjà mis leur résultat dans la pile et ont 0 dans rax. Le reste, on doit mettre rax dans la pile. *)
       (match e1.expr_desc with
       | TEcall _ -> nop
       | _ -> pushq !%rax) ++
@@ -361,6 +369,7 @@ and expr env e = match e.expr_desc with
       (* RAPPEL : on a toujours la convention qu'à la fin, une expr met son résultat dans rax.
       Si jamais une autre doit être évaluée avant qu'il soit utilisé, il est mis sur la pile.
       Ce n'est pas géré à la fin de l'expression, mais au début de la suivante.*)
+      (* les fonctions n'ont pas leur résultat dans rax, on doit l'y mettre de force. *)
       (match e2.expr_desc with
       | TEcall _ -> popq rax
       | _ -> nop) ++
@@ -376,8 +385,10 @@ and expr env e = match e.expr_desc with
       movzbq !%al rax ++
       popq rcx
 
+  (* cf le premier projet pour les opérations arithmétiques basiques. *)
   | TEbinop (Badd | Bsub | Bmul as op, e1, e2) ->
       expr env e2 ++
+      (*cf commentaire précédent sur les fonctions. Cette disjonction apparaîtra souvent.*)
       (match e2.expr_desc with
       | TEcall _ -> nop
       | _ -> pushq !%rax) ++
@@ -402,13 +413,14 @@ and expr env e = match e.expr_desc with
       | TEcall _ -> popq rax
       | _ -> nop) ++
       cqto ++
+      (* cf projet précédent pour le fonctionnement foireux de idivq *)
       idivq (ind rsp) ++
-      (* cf projet précédent pour le fonctionnement de idivq *)
       movq !%(if Bdiv = op then rax else rdx) !%rax ++
       popq rcx
 
   | TEbinop (Beq | Bne as op, e1, e2) ->
       (* TODO : cette fonction de marche pas ! *)
+      (* enfin peut être que si, j'en sais rien, mais je l'ai fait au pif à 3h du matin, donc j'y crois pas trop. *)
       expr env e1 ++
       (match e1.expr_desc with
       | TEcall _ -> nop
@@ -501,14 +513,13 @@ and expr env e = match e.expr_desc with
   | TEident x ->
       movq (ind ~ofs:x.v_addr rbp) !%rax
 
-  (* je comprend pas pourquoi [lvl] et pas lvl, on va donc faire lvl. Dans le doute, je suis meilleur que le sujet c: *)
+  (* je comprend pas pourquoi "[lvl]" et pas "lvl", on va donc faire "lvl". Dans le doute, je suis meilleur que le sujet c: *)
   | TEassign (lvl, el) ->
       (* on commence par stacker les valeurs à donner aux left values *)
       let rec stacking el = match el with
         | [] -> nop
         | e::q ->
             let a = stacking q in
-            (* edit : normalement l'ordre c'est bon *)
             a ++
             expr env e ++
             (match e.expr_desc with
@@ -532,6 +543,7 @@ and expr env e = match e.expr_desc with
             movq !%rbp !%rsp ++
             popq rbp
         | Twild ->
+            (* si jamais on veut donner une valeur à un _, alors on s'en fou et on la met à la poubelle. #Free_the__*)
             popq rsi
         | _ ->
             expr_address env lv ++
@@ -553,6 +565,8 @@ and expr env e = match e.expr_desc with
       in
       (* on commence par réserver la place pour les retours. *)
       (* on considère que les fonctions retourne des listes de profondeur 1, sinon c'est un enfer et je refuse de m'y prêter. *)
+      (* de toute façon jamais ils penseront à faire des tests aussi foireux ces fous. *)
+      (* ... j'espère que vous lirez mes commentaires en diagonale :o *)
       subq (imm (8 * (List.length f.fn_typ))) !%rsp ++
       stacking_args el ++
       call ("F_" ^ f.fn_name) ++
@@ -569,7 +583,8 @@ and expr env e = match e.expr_desc with
       and nb_glob = env.nb_locals in
       let t1 = List.fold_left (++) nop (List.map (expr new_env) el) in
       t1 ++
-      (* normalement c'est toujours vrai, sinon ya un tout péti problème :o *)
+      (* normalement cette condition est toujours vraie, sinon ya un tout péti problème :o *)
+      (* enfin pas strictement, mais largement *)
       (if new_env.nb_locals > nb_glob then
         (* ATTENTION ! bien réaligner la pile !*)
         (* historiquement, ça a posé problème. *)
@@ -608,26 +623,28 @@ and expr env e = match e.expr_desc with
   | TEnew ty ->
       allocz (sizeof ty)
 
-  | TEdot ({expr_desc = (TEident _ | TEcall _) } as e1, {f_name; f_ofs}) ->
+  | TEdot ({ expr_desc = (TEident _ | TEcall _) } as e1, {f_name; f_ofs}) ->
       (* TODO : pour les TEcall il est possible que ça ne marche pas. *)
+      (* de toute façon on ne peut pas faire de a.f(b), si ? ça me paraîtrait bizarre ... à tester. *)
       expr env e1 ++
       movq (ind ~ofs:f_ofs rax) !%rax
 
-  | TEdot ({expr_desc = (TEdot _) }, f) ->
+  (* on sépare ce cas, parce que les structures sont stoquées comme pointeur ves la mémoire SAUF si elles sont stockées dans une autre structure, auquel cas, elles sont directement en son sein. *)
+  | TEdot ({ expr_desc = (TEdot _) }, f) ->
       expr_address env e ++
       movq (ind rax) !%rax
 
-  | TEdot ({expr_desc = TEunop(Ustar,e1) },f) -> 
-      expr env {e with expr_desc =(TEdot(e1,f))}
+  | TEdot ({ expr_desc = TEunop(Ustar,e1) },f) -> 
+      expr env {e with expr_desc = (TEdot(e1,f))}
 
   | TEvars (varlist, initlist) ->
-      (* Attention, pour les Tstruct -8 ça suffit pas ! *)
+      (* -8 ça suffit toujours ! rappel : tout est soit de taille 8, soit stocké comme pointeur, donc de taille 8 quoi qu'il arrive. *)
       List.iter (fun var ->
         env_add_variable env;
         var.v_addr <- -8 * (env.nb_locals))
       (List.rev varlist);
-      (* c'est giga sombre, un paquet de nouilles sèches serait plus efficace que mon cerveau à ce point. On va dire que el n'a aucun appel à une fonction, ou au moins aucun appel à une fonction qui retourne plusieurs choses, parce que jpp :o *)
-      (* EDIT : en fait c'est le typing qui s'en charge ! ... par contre, dans mon typing oui, dans celui de la correction, aucune idée... *)
+      (* c'est giga sombre, un paquet de nouilles sèches serait plus efficace que mon cerveau à ce point. En plus ce bout de code est réutilisé partout. On va prier pour que ça marche. *)
+      (* EDIT : apparemment ça marche.*)
       let rec stacking el = match el with
         | [] -> nop
         | e::q ->
@@ -645,6 +662,10 @@ and expr env e = match e.expr_desc with
 
   | TEreturn [e1] ->
       expr env e1 ++
+      (* ici aussi on prie pour que la fonction qu'on retourne ne retourne pas elle même plus que un truc. *)
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       (* on empile le résultat à la bonne position *)
       movq !%rax (ind ~ofs:(8*env.ofs_this + 8) rbp) ++
       jmp ("E_" ^ env.exit_label)
@@ -656,12 +677,17 @@ and expr env e = match e.expr_desc with
       let i = ref 1 in
       let rec stacking el = match el with
         | [] -> nop
-        | e::q ->
+        | e1::q ->
             incr i;
             let a = stacking q in
             decr i;
             a ++
-            expr env e ++
+            expr env e1 ++
+            (* ce stacking est différent des autres : si jamais on stack une fonction, avant, elle le faisait toute seule.
+               Maintenant, on elle le fait mais pas au bon endroit, donc on récupère ce qu'elle a stacké et on el met au bon endroit.*)
+            (match e1.expr_desc with
+            | TEcall _ -> popq rax
+            | _ -> nop) ++
             movq !%rax (ind ~ofs:(8*(env.ofs_this + !i)) rbp)
       in
       stacking el ++
@@ -672,19 +698,18 @@ and expr env e = match e.expr_desc with
       (if op = Inc then incq else decq) (ind rax)
 
 
-(*F_
-...
-E_
-s'occupe du return, met 0 dans rax, bouge rsp à rbp, pop rbp dans rbp, puis ret
+(* E_... s'occupe du return, met 0 dans rax, bouge rsp à rbp, pop rbp dans rbp, puis ret
 
-le TEreturn ne s'occupe pas du ret ! il s'occupe juste d'empiler les valeurs de retours et de sauter vers E_
-Si jamais il n'y a pas de ret, du coup, on va automatiquement aller dans E_*)
+Le TEreturn ne s'occupe pas du ret ! il s'occupe juste d'empiler les valeurs de retours et de sauter vers E_.
+Si jamais il n'y a pas de return, du coup, on va automatiquement aller dans E_, et il y aura quand même un ret. *)
 let function_ f e =
   if !debug then Format.eprintf "function %s:@." f.fn_name;
   let s = f.fn_name
   and n_params = List.length f.fn_params in
   let env = { exit_label = s ;
-              ofs_this = (n_params + 1); (* c'est le call qui réserve la place pour le return *)
+              (* le call qui réserve la place pour le return *)
+              (* ici on a juste besoin de savoir de combien se décaler pour écrire dans les cases res i*)
+              ofs_this = (n_params + 1); 
               nb_locals = 0;
   } in
 
