@@ -1,0 +1,94 @@
+\documentclass{article}
+\usepackage[french]{babel}
+\usepackage{listings}
+
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\title{Projet de Compilation}
+\author{Grégoire DHIMOÏLA}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport présente mon second projet du cours de Programmation I, dans lequel j'ai implémenté un compilateur de NanoGo. Nous verrons en particulier les parties dédiées au typage et à la production de code assembleur.
+\end{abstract}
+
+\section{Typage}
+
+A l'entrée de cette phase, on assure que le code go est valide en terme de lexique et de syntaxe. On fournit également un arbre syntaxique représentant les instructions à effectuer, et dans quel ordre.
+
+Le but de cette phase est de prendre cet arbre syntaxique, et de produire un arbre typé, assurant que le code est valide sur ce point, ainsi que de poser des bases qui seront utiles dans la phase de compilation. 
+
+\subsection{Choix d'implémentation}
+
+Pour les environnements de structure et de fonction, j'ai choisi d'utiliser de simples tables de hachages, contrairement au gros module Env qui a été fournit pour gérer les variables, par simplicité et parce que cela suffisait amplement à l'utilisation que j'en ai fait.
+
+La principale raison pour laquelle une simple table de hachage suffit est que toutes les structures et toutes les fonctions sont déclarées globalement, alors que pour les variables, les bloques peuvent s'imbriquer, ou s'appeler les uns les autres, ce qui introduit de la localité et des subtilités sur le fait qu'une variable soit utilisée ou non, sur sa portée, ...\newline
+
+Pour savoir si une structure est récursive, j'ai choisit un algorithme qui s'inclue dans celui de calcul de la taille d'une structure, ce qui a le bon goût d'être à la fois élégant et très efficace puisqu'un ne parcours qu'une fois chaque structure. Les tailles des structures sont initialisées à -1, et lorsqu'on calcule pour la première fois la taille d'une structure, on la met à -2 jusqu'à avoir finit le calcul. Ce calcul est récursif. Ainsi, dès que l'on croise une structure de taille -2, on sait qu'on a un cas de structure récursive.
+
+
+\subsection{Difficultés et échecs}
+
+\begin{itemize}
+\item Je n'ai pas implémenté le traitement de nil. Ceci peut se faire par quelques disjonction de cas en plus et l'usage du type Twild. Cependant je n'ai pas réussi à déterminer comment traiter ce type, puisqu'il doit être égal à n'importe quel autre mais un seul à la fois...\newline
+\item Le traitement des "\_" a été particulièrement difficile, car je ne savais pas vraimant à quel endroit il fallait s'en occuper, et comment. Il s'avère que la plupart du temps, le traitement des "\_" était plus ou moins le même que le traitement des variables qui ne sont pas dans le même bloc, donc au final la situation s'est débloquée assez naturellement.\newline
+\item J'ai également eu du mal pendant un long moment à séparer les phases. J'essayais en vain de tout vouloir traiter en même temps sans comprendre comment faire pour que ça marche, avant de comprendre comment séparer efficacement les phases. En particulier, lors des premières phases, j'essayais de déjà détecter des problèmes qui serait de toute façon détecté par une phase postérieure.\newline\newline\newline
+\item Un autre problème rencontré à été la gestion des return. En effet, les cas comme 
+\begin{lstlisting}
+{
+...
+if b then
+    return
+...
+}
+\end{lstlisting}
+présentent un problème de retour pariel que je ne savais pas comment gérer, j'ai donc du rajouter un champ dans les expr spécifique au retours pour détecter les retours partiels.
+\end{itemize}
+
+
+
+\section{Production de code assembleur}
+
+On suppose maintenant que l'on possède un arbre bien typé, et on s'intéresse à la production de code machine qui executera effectivement les instructions demandées par l'utilisateur au travers du code go.
+
+Contrairement au projet précédent, on ne cherchera aucunement à rendre ce code efficace. Tout ce qu'on demande est qu'il produise la bonne sortie.
+
+\subsection{Détour sur une segfault, une mamie et l'histoire du temps qui passe}
+"On t'a déjà dit que tu as une tête à claques ?" - Une mamie dans le métro au jeune moi. Une étude américaine a réussi à démontrer qu'en fait cette phrase était un message adressé au travers du temps à notre cher ami Windows. Sa condition de mamie étant par ailleurs une représentation métafantasmatique du temps qui pèsera sur mes épaules comme manifestation du fardeau des longs combats perdus d'avance contre une telle machiavélie digitale. En voici un court résumé :\newline
+\begin{itemize}
+\item Segfault
+\item Segfault
+\item Segfault
+\item ...
+\item Bon, passons sur Linux.
+\item OH BAH TIENS, BIZARREMENT CA MARCHE BEAUCOUP MIEUX !
+\end{itemize}
+
+Ainsi s'acheva l'histoire du message qui traversa le temps. Il vécut heureux, et eut beaucoup d'enfants.
+
+\subsection{Choix d'implémentation}
+\begin{itemize}
+\item Comme une grande partie de l'évaluation du projet sera faite au travers d'affichages sur la ligne de commande, une attention toute particulière a été apportée à la gestion des affichage. Je n'ai par ailleurs pas mis de fonction d'affichage par défaut, typiquement, print\_int ou print\_string, car puisqu'il faut gérer les fonctions d'affichage personnalisées pour les structures, autant ne pas polluer inutilement le code et ne mettre que les fonctions utiles. Les fonctions déjà générées sont stockées dans un environnement spéciale pour ne pas les générer plusieurs fois inutilement.
+\item J'ai commencé par implémenter tous les cas simples et les cas de bases, tel que les opérations arithmétiquessur des constantes, puis j'ai construit petit à petit de quoi gérer des cas plus complexes. L'idée étant que si les cas de base fonctionne et que les compositions de cas de base fonctionnent, alors tout fonctionne. Le problème est qu'il faut penser à tous les cas qui pourraient avoir été ommis.
+\item Par soucis de simplicité du code, tout ce que l'on stockera dans la pile sera de taille 8. En particulier, pas de structure dans la pile. Il est donc important de faire la distinction entre une structure, qui est un pointeur vers l'endroit de la mémoire qui contient effectivement cette structure, et un pointeur vers une structure, qui pointe alors vers un endroit de la pile où est stocké le pointeur veurs la vraie structure.
+\item Par soucis de simplicité du code, toutes les fonctions doivent être traitées de la même manière, et en particulier, une fonction qui ne renvoie qu'un seul élément le renverra dans la pile et non pas dans rax.
+\item La remarque sur la représentation des structures est à nuancer : si un champ d'une structure A contient une structure B, alors cette instance de la structure B est effectivement stockée à l'intérieur de la structure A, et n'est donc plus traitée comme un pointeur vers la mémoire.
+\item Pour les TEassign, je n'ai pas compris à quoi servait la disjonction de cas, ni pourquoi aucun cas ne comprenait de listes lvl/el, simplement des listes à un élément et des liste de listes ( [lvl]/[el]), j'ai donc pris la libertié de modifier ce cas là.
+\end{itemize}
+
+\subsection{Difficultés et échecs}
+\begin{itemize}
+\item En procédant comme je l'ai fait, petit à petit, en construisant sur des bases qui fonctionnent correctement, je n'ai pas vraiment rencontré de problème intéressant.
+\item TODO : vérifier que le test d'égalité fonctionne 
+\item 
+\item 
+\end{itemize}
+
+
+\end{document}
