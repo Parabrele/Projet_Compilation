@@ -25,7 +25,6 @@
 
 *)
 
-(* TODO : (rapport) tests : tous les cas de bases des fonctions de bases, puis des cas plus compliqués éventuellement, et si jamais tous les cas de base fonctionnent, et que les cas compliqués sont valides, alors la composition des cas de bases est valide et les autres cas compliqués sont valides. On espère, en tout cas :o *)
 (* TODO : reprendre les différences avec le compile de la salle info ! il gère les structures ! *)
 
 (* note préliminaire : la plupart du temps, on ignore la taille des objets qu'on manipule et on considère que c'est juste 8.
@@ -139,8 +138,6 @@ let t_expr_to_print = function
 
   let space_s = alloc_string " "
 
-(* TODO dans le rapport, parler de comment c'était trop big brain de faire une hastbl pour faire que les print qu'on veut et s'en souvenir*)
-(* mais que avec un string du code qu'on génère nous même sans x8664, ça aurait été plus simple ! *)
 (* Générations des fonctions print utiles *)
 let print_env = Hashtbl.create 5
 let rec add_print_function typ =
@@ -318,7 +315,7 @@ and expr_address env { expr_desc=desc; expr_typ=typ } = match desc, typ with
       addq (imm f.f_ofs) !%rax
   | TEunop (Ustar, e), _ ->
       expr env e
-  | _ -> failwith "seule les l values ont des adresses"
+  | _ -> failwith "seules les l values ont des adresses"
 
 and expr env e = match e.expr_desc with
   | TEskip ->
@@ -501,7 +498,7 @@ and expr env e = match e.expr_desc with
       | TEcall _ -> popq rax
       | _ -> nop) ++
       (match e1.expr_typ with
-        (* big brain time, j'ai giga galérer pour pas grand chose au final. Le méli mélo qu'il y avait dans ma tête fut comparable à celui de Tipiak. *)
+        (* big brain time, j'ai giga galéré pour pas grand chose au final. Le méli mélo qu'il y avait dans ma tête fut comparable à celui de Tipiak. *)
         | Tptr (Tstruct _) -> nop
         | _ -> movq (ind rax) !%rax
       )
@@ -684,7 +681,7 @@ and expr env e = match e.expr_desc with
             a ++
             expr env e1 ++
             (* ce stacking est différent des autres : si jamais on stack une fonction, avant, elle le faisait toute seule.
-               Maintenant, on elle le fait mais pas au bon endroit, donc on récupère ce qu'elle a stacké et on el met au bon endroit.*)
+               Maintenant, on elle le fait mais pas au bon endroit, donc on récupère ce qu'elle a stacké et on le met au bon endroit.*)
             (match e1.expr_desc with
             | TEcall _ -> popq rax
             | _ -> nop) ++
