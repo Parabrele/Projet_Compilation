@@ -7,7 +7,7 @@ main:
 F_main:
 	pushq %rbp
 	movq %rsp, %rbp
-	movq $16, %rdi
+	movq $24, %rdi
 	pushq %rbp
 	movq %rsp, %rbp
 	movq $0xfffffffffffffff0, %rax
@@ -17,7 +17,7 @@ F_main:
 	popq %rbp
 	movq %rax, %rdi
 	movq $0, %rsi
-	movq $2, %rdx
+	movq $3, %rdx
 	pushq %rbp
 	movq %rsp, %rbp
 	movq $0xfffffffffffffff0, %rax
@@ -27,7 +27,7 @@ F_main:
 	popq %rbp
 	movq %rdi, %rax
 	pushq %rax
-	movq $0, %rax
+	movq $5, %rax
 	pushq %rax
 	movq -8(%rbp), %rax
 	addq $0, %rax

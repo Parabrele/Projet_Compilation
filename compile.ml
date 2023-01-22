@@ -25,7 +25,8 @@
 
 *)
 
-(* TODO : tests : tous les cas de bases des fonctions de bases, puis des cas plus compliqués éventuellement, et si jamais tous les cas de base fonctionnent, et que les cas compliqués sont valides, alors la composition des cas de bases est valide et les autres cas compliqués sont valides. On espère, en tout cas :o *)
+(* TODO : (rapport) tests : tous les cas de bases des fonctions de bases, puis des cas plus compliqués éventuellement, et si jamais tous les cas de base fonctionnent, et que les cas compliqués sont valides, alors la composition des cas de bases est valide et les autres cas compliqués sont valides. On espère, en tout cas :o *)
+(* TODO : reprendre les différences avec le compile de la salle info ! il gère les structures ! *)
 
 (* note préliminaire : la plupart du temps, on ignore la taille des objets qu'on manipule et on considère que c'est juste 8.
 Il faudra y remédier si le temps s'y prête.*)
@@ -260,7 +261,6 @@ let rec add_print_function typ =
 (* Gère les appels de print *)
 let rec expr_print add_space env = function
   | [] -> nop
-  (* TODO : gérer les retours de fonction *)
   (* pour ça on regarde si l'expression est un call, et si oui on print ses retours au lieu de rax. *)
   (* note : les fonctions retournent des Tmany, donc pas des Tstring, donc pas besoin dans le 1er cas. *)
   | ({ expr_typ = Tstring } as e) :: el ->
@@ -354,11 +354,16 @@ and expr env e = match e.expr_desc with
 
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
       expr env e1 ++
-      pushq !%rax ++
+      (match e1.expr_desc with
+      | TEcall _ -> nop
+      | _ -> pushq !%rax) ++
       expr env e2 ++
       (* RAPPEL : on a toujours la convention qu'à la fin, une expr met son résultat dans rax.
       Si jamais une autre doit être évaluée avant qu'il soit utilisé, il est mis sur la pile.
       Ce n'est pas géré à la fin de l'expression, mais au début de la suivante.*)
+      (match e2.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       cmpq !%rax (ind rsp) ++
       (function
         | Blt -> setl
@@ -373,8 +378,13 @@ and expr env e = match e.expr_desc with
 
   | TEbinop (Badd | Bsub | Bmul as op, e1, e2) ->
       expr env e2 ++
-      pushq !%rax ++
-      expr env e1 ++ 
+      (match e2.expr_desc with
+      | TEcall _ -> nop
+      | _ -> pushq !%rax) ++
+      expr env e1 ++
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       (function
         | Badd -> addq
         | Bsub -> subq
@@ -384,8 +394,13 @@ and expr env e = match e.expr_desc with
 
   | TEbinop (Bdiv | Bmod as op, e1, e2) ->
       expr env e2 ++
-      pushq !%rax ++
+      (match e2.expr_desc with
+      | TEcall _ -> nop
+      | _ -> pushq !%rax) ++
       expr env e1 ++
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       cqto ++
       idivq (ind rsp) ++
       (* cf projet précédent pour le fonctionnement de idivq *)
@@ -395,8 +410,13 @@ and expr env e = match e.expr_desc with
   | TEbinop (Beq | Bne as op, e1, e2) ->
       (* TODO : cette fonction de marche pas ! *)
       expr env e1 ++
-      pushq !%rax ++
+      (match e1.expr_desc with
+      | TEcall _ -> nop
+      | _ -> pushq !%rax) ++
       expr env e2 ++
+      (match e2.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       movq !%rax !%rdi ++
       popq rsi ++
       (match e1.expr_typ with
@@ -446,10 +466,16 @@ and expr env e = match e.expr_desc with
 
   | TEunop (Uneg, e1) ->
       expr env e1 ++
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       negq !%rax
 
   | TEunop (Unot, e1) ->
       expr env e1 ++
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       notq !%rax ++
       (* pas sûr de ce que ça fait, mais ça le fait :o *)
       andq (imm 1) !%rax
@@ -459,6 +485,9 @@ and expr env e = match e.expr_desc with
 
   | TEunop (Ustar, e1) ->
       expr env e1 ++
+      (match e1.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       (match e1.expr_typ with
         (* big brain time, j'ai giga galérer pour pas grand chose au final. Le méli mélo qu'il y avait dans ma tête fut comparable à celui de Tipiak. *)
         | Tptr (Tstruct _) -> nop
@@ -475,8 +504,6 @@ and expr env e = match e.expr_desc with
   (* je comprend pas pourquoi [lvl] et pas lvl, on va donc faire lvl. Dans le doute, je suis meilleur que le sujet c: *)
   | TEassign (lvl, el) ->
       (* on commence par stacker les valeurs à donner aux left values *)
-      (* TODO : si jamis c'est une Tstruct ça marche pas, il faut faire une disjonction de cas ! Et pareil pour les prochaines fois ! *)
-      (* TODO : si jamais on a x, y = f(), alors f() stock ses resultats sur la pile, et on n'a pas besoin de les empiler. Donc si jamais e est un tecall, il faut pas faire de push rax ! *)
       let rec stacking el = match el with
         | [] -> nop
         | e::q ->
@@ -553,6 +580,9 @@ and expr env e = match e.expr_desc with
       let esle = new_label ()
       and neht = new_label () in
       expr env b ++
+      (match b.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       cmpq (imm 0) !%rax ++
       je esle ++
       expr env e1 ++
@@ -569,6 +599,9 @@ and expr env e = match e.expr_desc with
       expr env e ++
       label l_b ++
       expr env b ++
+      (match b.expr_desc with
+      | TEcall _ -> popq rax
+      | _ -> nop) ++
       cmpq (imm 1) !%rax ++
       je l_begin
 
@@ -576,6 +609,7 @@ and expr env e = match e.expr_desc with
       allocz (sizeof ty)
 
   | TEdot ({expr_desc = (TEident _ | TEcall _) } as e1, {f_name; f_ofs}) ->
+      (* TODO : pour les TEcall il est possible que ça ne marche pas. *)
       expr env e1 ++
       movq (ind ~ofs:f_ofs rax) !%rax
 
@@ -617,7 +651,7 @@ and expr env e = match e.expr_desc with
 
   | TEreturn el ->
       (* on empile les résultats aux bonnes positions *)
-      (* TODO : return f() n'est pas géré *)
+      (* TODO : return f(), g() n'est pas géré si ils ont chacun plusieurs retours *)
       (* attention à l'ordre d'empilement (hence the incr decr foireux) *)
       let i = ref 1 in
       let rec stacking el = match el with

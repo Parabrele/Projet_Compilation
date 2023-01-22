@@ -1,10 +1,9 @@
+
 package main
 
-type T struct {
-	x, y int
-}
+type T struct { a int; b bool; p *int }
 
 func main() {
 	var t T
-	t.x = 0
+    t.a = 5
 }
