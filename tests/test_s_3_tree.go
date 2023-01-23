@@ -21,5 +21,8 @@ func main() {
     c.is_empty, c.ls, c.rs, c.node = false, a, a, 5
     d := new(tree)
     d.is_empty, d.ls, d.rs, d.node = false, c, a, 3
+    fmt.Print(d, "\n")
+    fmt.Print(d.ls, "\n")
+    fmt.Print(d.rs, "\n")
     fmt.Print(nodes(d))
 }

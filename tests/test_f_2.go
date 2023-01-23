@@ -7,5 +7,5 @@ func test(n int) int {
 }
 
 func main() {
-	fmt.Print(fact(2));
+	fmt.Print(test(2));
 }

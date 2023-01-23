@@ -24,7 +24,7 @@ func main() {
 
 	fmt.Print("\n")
 
-	var a a
+	var a A
 	a.x, a.y = 3, 4
 	a.t = t
 	fmt.Print(a, "\n")

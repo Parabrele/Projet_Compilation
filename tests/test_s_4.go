@@ -29,7 +29,7 @@ func main() {
     l.ly.mz = "World"
 
     fmt.Print(l.lx, l.ly.mx, l.ly.my.nx, l.ly.my.ny, l.ly.mz, "\n")
-    fmt.Print(l.lx, l.ly.mx, l.ly.my, l.ly.mz, "\n")
+    fmt.Print(l, "\n")
     fmt.Print(l.lx, l.ly, "\n");
     fmt.Print(l, "\n")
 }

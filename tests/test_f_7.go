@@ -13,7 +13,7 @@ func fact_rec(n int) int {
 	if n <= 1 {
 		return 1;
 	}
-	return n * fact(n-1);
+	return n * fact_rec(n-1);
 }
 
 func fib(n int) int {

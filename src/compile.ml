@@ -569,7 +569,7 @@ and expr env e = match e.expr_desc with
       call ("F_" ^ f.fn_name) ++
       (* E_ efface les variables locales *)
       (* ici on efface les arguments *)
-      addq (imm (8 * (List.length el))) !%rsp
+      addq (imm (8 * (List.length f.fn_params))) !%rsp
       (* il ne reste donc plus que les res sur la pile *)
 
       (* si jamais les résultats ne sont pas utilisés, c'est pas si grave, ça va polluer la pile,
@@ -692,6 +692,8 @@ and expr env e = match e.expr_desc with
   | TEincdec (e1, op) ->
       expr_address env e1 ++
       (if op = Inc then incq else decq) (ind rax)
+  
+  | _ -> failwith "bruh"
 
 
 (* E_... s'occupe du return, met 0 dans rax, bouge rsp à rbp, pop rbp dans rbp, puis ret

@@ -6,12 +6,14 @@ func f(n, m, t int) int {
 	return n * m / t + x
 }
 
-func g(n int) int, int, int {
+func g(n int) (int, int, int) {
 	var x = 1
 	return n + x, n / x, x
 }
 
 func main() {
 	var x = 6
-	fmt.Print(f(g(x)));
+	var y = f(g(x))
+	fmt.Print(y, "\n");
+	fmt.Print(f(g(x)), "\n");
 }
