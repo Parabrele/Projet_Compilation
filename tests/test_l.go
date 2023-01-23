@@ -42,4 +42,5 @@ func main(){
 	var a,b,c,d = 5,7,8,9;
 	fmt.Print(*ptr, "\n")
 	_,_,_,_ = a,b,c,d
+	
 }
