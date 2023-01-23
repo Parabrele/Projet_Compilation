@@ -79,13 +79,14 @@ Ainsi s'acheva l'histoire du message qui traversa le temps. Il vécut heureux, e
 \item Par soucis de simplicité du code, tout ce que l'on stockera dans la pile sera de taille 8. En particulier, pas de structure dans la pile. Il est donc important de faire la distinction entre une structure, qui est un pointeur vers l'endroit de la mémoire qui contient effectivement cette structure, et un pointeur vers une structure, qui pointe alors vers un endroit de la pile où est stocké le pointeur veurs la vraie structure.
 \item Par soucis de simplicité du code, toutes les fonctions doivent être traitées de la même manière, et en particulier, une fonction qui ne renvoie qu'un seul élément le renverra dans la pile et non pas dans rax.
 \item La remarque sur la représentation des structures est à nuancer : si un champ d'une structure A contient une structure B, alors cette instance de la structure B est effectivement stockée à l'intérieur de la structure A, et n'est donc plus traitée comme un pointeur vers la mémoire.
+\item Un problème un peu spécifique maintenant : dans mon implémentation, si on retourne l'adresse d'une variable locale, ça pointe vers un endroit dans la pile qu'on peut écraser. Le vrai go traite ce cas en allouant une case mémoire, et en renvoyant le pointeur vers cette case. Je ne sais pas ce qu'il en est du nano go.
 \item Pour les TEassign, je n'ai pas compris à quoi servait la disjonction de cas, ni pourquoi aucun cas ne comprenait de listes lvl/el, simplement des listes à un élément et des liste de listes ( [lvl]/[el]), j'ai donc pris la libertié de modifier ce cas là.
 \end{itemize}
 
 \subsection{Difficultés et échecs}
 \begin{itemize}
+\item La sémantique demande d'évaluer les arguments d'une fonction de droite à gauche. Ceci n'est pas respecté pour le cas de la fonction print.
 \item En procédant comme je l'ai fait, petit à petit, en construisant sur des bases qui fonctionnent correctement, je n'ai pas vraiment rencontré de problème intéressant.
-\item TODO : vérifier que le test d'égalité fonctionne 
 \end{itemize}
 
 
