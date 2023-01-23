@@ -622,7 +622,6 @@ and expr env e = match e.expr_desc with
 
   | TEdot ({ expr_desc = (TEident _ | TEcall _) } as e1, {f_name; f_ofs}) ->
       (* TODO : pour les TEcall il est possible que ça ne marche pas. *)
-      (* de toute façon on ne peut pas faire de a.f(b), si ? ça me paraîtrait bizarre ... à tester. *)
       expr env e1 ++
       movq (ind ~ofs:f_ofs rax) !%rax
 
